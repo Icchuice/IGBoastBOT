@@ -22,11 +22,7 @@ c.execute('''CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY, telegram_
 c.execute('''CREATE TABLE IF NOT EXISTS coin_orders (id INTEGER PRIMARY KEY AUTOINCREMENT, telegram_id TEXT, amount_inr INTEGER, coins_to_add INTEGER, utr_id TEXT UNIQUE, status TEXT DEFAULT 'pending')''')
 conn.commit()
 
-main_menu = ReplyKeyboardMarkup([
-    ['/earn ⚡', '/balance 👛'],
-    ['/order 📦', '/shop 💰'],
-    ['/refer 🤝', '/leaderboard 🏆']
-], resize_keyboard=True)
+main_menu = ReplyKeyboardMarkup([['/earn ⚡', '/balance 👛'],['/order 📦', '/shop 💰'],['/refer 🤝', '/leaderboard 🏆']], resize_keyboard=True)
 
 def start(update: Update, context: CallbackContext):
     telegram_id = str(update.effective_user.id)
@@ -62,13 +58,11 @@ def pay(update: Update, context: CallbackContext):
 def main():
     updater = Updater(BOT_TOKEN, use_context=True)
     dp = updater.dispatcher
-
     dp.add_handler(CommandHandler("start", start))
     dp.add_handler(CommandHandler("balance", balance))
     dp.add_handler(CommandHandler("shop", shop))
     dp.add_handler(CommandHandler("pay", pay))
-
-    print("✅ IG BOOSTER PRO BOT LIVE - v13")
+    print("✅ IG BOOSTER PRO BOT LIVE")
     updater.start_polling()
     updater.idle()
 
