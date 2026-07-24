@@ -1,3 +1,9 @@
+import sys
+import types
+# imghdr ko fake kar do taaki ptb v13 crash na ho
+sys.modules['imghdr'] = types.ModuleType('imghdr')
+sys.modules['imghdr'].what = lambda *args, **kwargs: None
+
 import sqlite3
 import os
 import random
@@ -62,7 +68,7 @@ def main():
     dp.add_handler(CommandHandler("balance", balance))
     dp.add_handler(CommandHandler("shop", shop))
     dp.add_handler(CommandHandler("pay", pay))
-    print("✅ IG BOOSTER PRO BOT LIVE")
+    print("✅ IG BOOSTER PRO BOT LIVE - Python 3.13 FIXED")
     updater.start_polling()
     updater.idle()
 
