@@ -1,160 +1,163 @@
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes, CallbackQueryHandler
+import sqlite3
+import os
+from dotenv import load_dotenv
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup
+from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, filters, ContextTypes
 import random
+import asyncio
 
-TOKEN = "8683534945:AAEk_LcMWJmI0oMIbejGxtbpVM-1QAapGV4"
+load_dotenv()
 
-rooms = {}
+BOT_TOKEN = os.getenv("BOT_TOKEN")
+ADMIN_ID = int(os.getenv("ADMIN_ID"))
+UPI_ID = "7864063872.wallet@phonepe"
 
-# /start
+# ========= DATABASE =========
+conn = sqlite3.connect('igbooster_pro.db', check_same_thread=False)
+c = conn.cursor()
+
+c.execute('''CREATE TABLE IF NOT EXISTS users
+             (id INTEGER PRIMARY KEY, telegram_id TEXT UNIQUE, ig_username TEXT, coins INTEGER DEFAULT 0, referrals INTEGER DEFAULT 0, referred_by TEXT)''')
+
+c.execute('''CREATE TABLE IF NOT EXISTS tasks
+             (id INTEGER PRIMARY KEY AUTOINCREMENT, order_id INTEGER, ig_username TEXT, ig_dp TEXT, type TEXT, link TEXT, reward INTEGER DEFAULT 10, status TEXT DEFAULT 'active', completed_by TEXT)''')
+
+c.execute('''CREATE TABLE IF NOT EXISTS coin_orders
+             (id INTEGER PRIMARY KEY AUTOINCREMENT, telegram_id TEXT, amount_inr INTEGER, coins_to_add INTEGER, utr_id TEXT UNIQUE, status TEXT DEFAULT 'pending')''')
+
+c.execute('''CREATE TABLE IF NOT EXISTS settings
+             (id INTEGER PRIMARY KEY, upi_id TEXT, cost_per_follower REAL, cost_per_10k_views REAL, cost_per_like REAL)''')
+
+c.execute("INSERT OR IGNORE INTO settings VALUES (1,?, 0.5, 10, 1.5)", (UPI_ID,))
+conn.commit()
+
+# ========= KEYBOARDS =========
+main_menu = ReplyKeyboardMarkup([
+    ['/earn ⚡', '/balance 👛'],
+    ['/order 📦', '/shop 💰'],
+    ['/refer 🤝', '/leaderboard 🏆']
+], resize_keyboard=True)
+
+# ========= COMMANDS =========
+
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(
-        "🎭 Welcome to Sween Spy Game Bot!\n\n"
-        "1. Sab log bot ko private me /start karein\n"
-        "2. Group me /room 4 likh ke game start karein"
-    )
+    telegram_id = str(update.effective_user.id)
+    ref = context.args[0] if context.args else None
 
-# /room
-async def room(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    try:
-        size = int(context.args[0])
-        if size < 4 or size > 8:
-            return await update.message.reply_text("Room size 4-8 hona chahiye!")
+    c.execute("SELECT * FROM users WHERE telegram_id=?", (telegram_id,))
+    user = c.fetchone()
 
-        room_id = update.effective_chat.id
-
-        rooms[room_id] = {
-            "players": [],
-            "size": size,
-            "started": False,
-            "spy": None,
-            "votes": {}
-        }
-
-        button = [[InlineKeyboardButton("Join Game", callback_data="join")]]
-
-        await update.message.reply_text(
-            f"🎮 Room created for {size} players!\nClick to join",
-            reply_markup=InlineKeyboardMarkup(button)
-        )
-
-    except:
-        await update.message.reply_text("Use: /room 4")
-
-# Join button
-async def join(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    user = query.from_user
-    room = rooms.get(query.message.chat.id)
-
-    if not room:
-        return
-
-    if room["started"]:
-        await query.answer("Game already started!")
-        return
-
-    if user.id in room["players"]:
-        await query.answer("Already joined!")
-        return
-
-    room["players"].append(user.id)
-    await query.answer(f"Joined! ({len(room['players'])}/{room['size']})")
-
-    await query.message.reply_text(
-        f"✅ {user.first_name} joined! ({len(room['players'])}/{room['size']})"
-    )
-
-    # Start game when full
-    if len(room["players"]) == room["size"]:
-        await start_game(query, context)
-
-# Game start
-async def start_game(query, context):
-    room = rooms[query.message.chat.id]
-    players = room["players"]
-
-    words = ["Pizza", "Burger", "Train", "Car", "School", "Hospital", "Beach", "Cinema"]
-
-    word = random.choice(words)
-    spy_word = random.choice([w for w in words if w != word])
-
-    spy = random.choice(players)
-
-    room["spy"] = spy
-    room["started"] = True
-
-    # Send DM to each player
-    for p in players:
-        try:
-            if p == spy:
-                await context.bot.send_message(p, f"🕵️ Tum SPY ho!\nTumhara word: {spy_word}")
-            else:
-                await context.bot.send_message(p, f"👤 Tum Villager ho!\nTumhara word: {word}")
-        except:
-            pass
-
-    await query.message.reply_text(
-        "🎯 Game Started!\n"
-        "Sab apas mein baat karo aur spy dhundho.\n\n"
-        "Vote karne ke liye: /vote <user_id>"
-    )
-
-# /vote
-async def vote(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    room_id = update.effective_chat.id
-    room = rooms.get(room_id)
-
-    if not room or not room["started"]:
-        return await update.message.reply_text("Game nahi chal raha!")
-
-    try:
-        voted_id = int(context.args[0])
-    except:
-        return await update.message.reply_text("Use: /vote user_id")
-
-    voter = update.effective_user.id
-
-    if voter not in room["players"]:
-        return await update.message.reply_text("Tum game mein nahi ho!")
-
-    room["votes"][voter] = voted_id
-    await update.message.reply_text("✅ Vote record ho gaya!")
-
-    # Check if all voted
-    if len(room["votes"]) == len(room["players"]):
-        await end_game(update, context)
-
-# End game
-async def end_game(update, context):
-    room_id = update.effective_chat.id
-    room = rooms.get(room_id)
-
-    vote_count = {}
-    for v in room["votes"].values():
-        vote_count[v] = vote_count.get(v, 0) + 1
-
-    accused = max(vote_count, key=vote_count.get)
-    spy = room["spy"]
-
-    if accused == spy:
-        result = "🎉 Spy pakda gaya! Villagers jeet gaye!"
+    if not user:
+        coins = random.randint(200, 500)
+        c.execute("INSERT INTO users (telegram_id, coins, referred_by) VALUES (?,?,?)", (telegram_id, coins, ref))
+        if ref:
+            c.execute("UPDATE users SET coins = coins + 50, referrals = referrals + 1 WHERE telegram_id=?", (ref,))
+        conn.commit()
+        await update.message.reply_text(f"⚡ Welcome to IG BOOSTER PRO\n🎁 You got {coins} FREE coins!", reply_markup=main_menu)
     else:
-        result = "😈 Spy bach gaya! Spy jeet gaya!"
+        await update.message.reply_text("Welcome back!", reply_markup=main_menu)
 
-    await update.message.reply_text(
-        f"{result}\n\nSpy tha: {spy}"
-    )
+async def balance(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    telegram_id = str(update.effective_user.id)
+    c.execute("SELECT coins, referrals FROM users WHERE telegram_id=?", (telegram_id,))
+    user = c.fetchone()
+    await update.message.reply_text(f"👛 Balance: {user[0]} Coins\n🤝 Referrals: {user[1]}", reply_markup=main_menu)
 
-    rooms.pop(room_id, None)
+async def earn(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    c.execute("SELECT * FROM tasks WHERE status='active' AND completed_by IS NULL LIMIT 1")
+    task = c.fetchone()
 
-# App start
-app = ApplicationBuilder().token(TOKEN).build()
+    if not task:
+        return await update.message.reply_text("😔 No tasks available. Try later.", reply_markup=main_menu)
 
-app.add_handler(CommandHandler("start", start))
-app.add_handler(CommandHandler("room", room))
-app.add_handler(CommandHandler("vote", vote))
-app.add_handler(CallbackQueryHandler(join, pattern="^join$"))
+    task_id, order_id, ig_username, ig_dp, type, link, reward = task[0], task[1], task[2], task[3], task[4], task[5], task[6]
 
-print("Bot chal raha hai...")
-app.run_polling()
+    keyboard = [
+        [InlineKeyboardButton("🔥 OPEN INSTAGRAM", url=link)],
+        [InlineKeyboardButton(f"✅ CLAIM {reward} COINS", callback_data=f"claim_{task_id}")]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+
+    await update.message.reply_photo(photo=ig_dp,
+                                     caption=f"*NEW TASK*\n\n👤 @{ig_username}\n🎯 Action: {type.upper()}\n💰 Reward: {reward} Coins",
+                                     parse_mode='Markdown', reply_markup=reply_markup)
+
+async def claim(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    task_id = query.data.split('_')[1]
+    telegram_id = str(query.from_user.id)
+
+    c.execute("UPDATE tasks SET completed_by=?, status='done' WHERE id=? AND completed_by IS NULL", (telegram_id, task_id))
+    if c.rowcount == 0:
+        return await query.answer("❌ Already claimed")
+
+    c.execute("UPDATE users SET coins = coins + 10 WHERE telegram_id=?", (telegram_id,))
+    conn.commit()
+    await query.edit_message_caption("✅ Task Completed! +10 Coins")
+
+async def shop(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    text = f"""💰 BUY COINS
+1000 = ₹99 | 5000 = ₹399 | 12000 = ₹799
+UPI ID: `{UPI_ID}`
+
+After payment: `/pay UTR1234567890`"""
+    await update.message.reply_text(text, parse_mode='Markdown')
+
+async def pay(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    try:
+        utr = context.args[0]
+        telegram_id = str(update.effective_user.id)
+        c.execute("INSERT INTO coin_orders (telegram_id, utr_id, amount_inr, coins_to_add) VALUES (?,?,?,?)",
+                  (telegram_id, utr, 399, 5000))
+        conn.commit()
+        await update.message.reply_text("✅ Payment submitted. Admin will verify in 5 min")
+        await context.bot.send_message(ADMIN_ID, f"💰 NEW PAYMENT\nUser: {telegram_id}\nUTR: {utr}\nAmount: ₹399")
+    except:
+        await update.message.reply_text("Format: /pay UTR1234567890")
+
+async def admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id!= ADMIN_ID: return
+    keyboard = [[InlineKeyboardButton("💰 Pending Payments", callback_data="admin_payments")]]
+    await update.message.reply_text("Admin Panel", reply_markup=InlineKeyboardMarkup(keyboard))
+
+async def admin_payments(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    c.execute("SELECT * FROM coin_orders WHERE status='pending'")
+    rows = c.fetchall()
+    for r in rows:
+        keyboard = [
+            [InlineKeyboardButton("APPROVE", callback_data=f"approve_{r[0]}")],
+            [InlineKeyboardButton("REJECT", callback_data=f"reject_{r[0]}")]
+        ]
+        await query.message.reply_text(f"UTR: {r[4]}\nUser: {r[1]}\nCoins: {r[3]}", reply_markup=InlineKeyboardMarkup(keyboard))
+
+async def approve(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    order_id = query.data.split('_')[1]
+    c.execute("SELECT * FROM coin_orders WHERE id=?", (order_id,))
+    order = c.fetchone()
+    c.execute("UPDATE users SET coins = coins +? WHERE telegram_id=?", (order[3], order[1]))
+    c.execute("UPDATE coin_orders SET status='approved' WHERE id=?", (order_id,))
+    conn.commit()
+    await context.bot.send_message(order[1], f"✅ {order[3]} Coins Credited!")
+    await query.edit_message_text("✅ Approved")
+
+def main():
+    app = Application.builder().token(BOT_TOKEN).build()
+
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(CommandHandler("balance", balance))
+    app.add_handler(CommandHandler("earn", earn))
+    app.add_handler(CommandHandler("shop", shop))
+    app.add_handler(CommandHandler("pay", pay))
+    app.add_handler(CommandHandler("admin", admin))
+    app.add_handler(CallbackQueryHandler(claim, pattern=r'^claim_'))
+    app.add_handler(CallbackQueryHandler(admin_payments, pattern=r'^admin_payments'))
+    app.add_handler(CallbackQueryHandler(approve, pattern=r'^approve_'))
+
+    print("✅ IG BOOSTER PRO BOT V3 PYTHON LIVE")
+    app.run_polling()
+
+if __name__ == "__main__":
+    main()
