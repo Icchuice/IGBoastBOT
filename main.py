@@ -1,8 +1,6 @@
 import sys
 import types
-# imghdr ko fake kar do taaki ptb v13 crash na ho
 sys.modules['imghdr'] = types.ModuleType('imghdr')
-sys.modules['imghdr'].what = lambda *args, **kwargs: None
 
 import sqlite3
 import os
@@ -21,7 +19,6 @@ if not BOT_TOKEN:
     print("❌ ERROR: BOT_TOKEN missing")
     exit()
 
-# DB
 conn = sqlite3.connect('igbooster_pro.db', check_same_thread=False)
 c = conn.cursor()
 c.execute('''CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY, telegram_id TEXT UNIQUE, coins INTEGER DEFAULT 0, referrals INTEGER DEFAULT 0, referred_by TEXT)''')
@@ -56,8 +53,8 @@ def pay(update: Update, context: CallbackContext):
         telegram_id = str(update.effective_user.id)
         c.execute("INSERT INTO coin_orders (telegram_id, utr_id, amount_inr, coins_to_add) VALUES (?,?,?,?)",(telegram_id, utr, 399, 5000))
         conn.commit()
-        update.message.reply_text("✅ Payment submitted. Admin will verify")
-        context.bot.send_message(ADMIN_ID, f"💰 NEW PAYMENT\nUser: {telegram_id}\nUTR: {utr}")
+        update.message.reply_text("✅ Payment submitted. Admin will verify in 5 min")
+        context.bot.send_message(ADMIN_ID, f"💰 NEW PAYMENT\nUser: {telegram_id}\nUTR: {utr}\nAmount: ₹399")
     except:
         update.message.reply_text("Format: /pay UTR1234567890")
 
@@ -68,7 +65,7 @@ def main():
     dp.add_handler(CommandHandler("balance", balance))
     dp.add_handler(CommandHandler("shop", shop))
     dp.add_handler(CommandHandler("pay", pay))
-    print("✅ IG BOOSTER PRO BOT LIVE - Python 3.13 FIXED")
+    print("✅ IG BOOSTER PRO BOT LIVE ON RAILWAY")
     updater.start_polling()
     updater.idle()
 
