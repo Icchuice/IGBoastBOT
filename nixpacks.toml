@@ -1,10 +1,11 @@
 [phases.setup]
-nixPkgs = ["python312", "pip"] # 3.12 use karo, 3.13 me imghdr nahi hai
+nixPkgs = ["python312"]
 
 [phases.install]
 cmds = [
-  "pip install --upgrade pip",
-  "pip install python-telegram-bot==20.8 --no-cache-dir"
+  "python -m pip install --upgrade pip",
+  "pip uninstall python-telegram-bot python-telegram-bot[job-queue] -y",
+  "pip install python-telegram-bot[job-queue]==20.8 --no-cache-dir --force-reinstall"
 ]
 
 [start]
